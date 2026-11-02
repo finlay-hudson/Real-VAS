@@ -143,24 +143,35 @@ BG plate (see [Gen-Omnimatte setup](#optional-gen-omnimatte-support)), or
 
 ## Evaluation
 
-The evaluation code is currently exposed as a library — call `get_iou_results`
-from `real_vas.evaluation.eval_runner` in your own scoring script:
+Score your predictions against the Real-VAS dataset in one command:
 
-```python
-from real_vas.evaluation.eval_runner import get_iou_results
-
-results = get_iou_results(
-    exp_pred_masks,       # (num_generations, T, H, W) torch tensor, 0/1 or 0/255
-    gt_amodal_masks,      # (T, H, W) torch tensor
-    gt_vis_masks,         # (T, H, W) torch tensor (modal mask)
-    gt_occlusion_info,    # [OcclusionInfo.from_dict(o) for o in annos["occlusion"]]
-)
+```bash
+python -m real_vas.evaluation.evaluate \
+    --dataset ~/data/Real-VAS \
+    --predictions ~/my_model_outputs/ \
+    --split occlusion \
+    --output results.json
 ```
 
-Metrics returned per generation: `mIOU` (all frames), `mIOUfo` (any
-occlusion), `mIOUffo` (fully occluded), `mIOUocc` (hidden-region IoU on
-partially-occluded frames). A thin CLI wrapper would be a reasonable follow-up
-PR.
+The `predictions/` tree must mirror the dataset layout — one subdir per
+video, PNG masks per frame:
+
+```
+predictions/
+├── containment/<vid_name>/pred_masks/00000.png ...
+└── occlusion/<vid_name>/pred_masks/00000.png ...
+```
+
+For multi-generation predictions, put each generation under `gen_0/`,
+`gen_1/`, ... instead of `pred_masks/`. Masks can be grayscale PNG with any
+value > 0 taken as foreground (or strictly 0/255).
+
+Metrics per generation: `mIOU` (all frames), `mIOUfo` (any occlusion),
+`mIOUffo` (fully occluded), `mIOUocc` (hidden-region IoU on
+partially-occluded frames).
+
+The underlying library is also available directly for custom harnesses:
+`real_vas.evaluation.eval_runner.get_iou_results(preds, amodal_gt, modal_gt, occl_info)`.
 
 ---
 

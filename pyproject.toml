@@ -41,6 +41,7 @@ Source = "https://github.com/finlay-hudson/Real-VAS"
 
 [project.scripts]
 real-vas-demo = "real_vas.demo:main"
+real-vas-evaluate = "real_vas.evaluation.evaluate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
