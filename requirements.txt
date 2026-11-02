@@ -1,0 +1,26 @@
+torch==2.5.1
+torchvision==0.20.1
+
+opencv-python==4.10.0.84
+natsort==8.4.0
+omegaconf==2.3.0
+tqdm==4.66.1
+transformers==4.42.4
+matplotlib
+
+scikit-image
+scipy 
+shapely 
+pycocotools
+
+h5py
+decord
+hf_transfer
+
+# For sam3
+einops
+psutil
+
+# for gen omnimatte
+diffusers
+SentencePiece

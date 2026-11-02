@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "real_vas"
+version = "0.1.0"
+description = "Real-VAS: tools for composite generation and evaluation of real-world video amodal segmentation"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Finlay G. C. Hudson" },
+]
+dependencies = [
+    "torch>=2.5",
+    "torchvision>=0.20",
+    "opencv-python>=4.10",
+    "natsort>=8.4",
+    "omegaconf>=2.3",
+    "tqdm>=4.66",
+    "transformers>=4.42",
+    "matplotlib",
+    "scikit-image",
+    "scipy",
+    "shapely",
+    "pycocotools",
+    "h5py",
+    "decord",
+    "einops",
+    "psutil",
+    "huggingface_hub",
+    "pillow",
+    "numpy",
+]
+
+[project.urls]
+Homepage = "https://finlay-hudson.github.io/real_vas"
+Dataset = "https://huggingface.co/datasets/fhudson96/Real-VAS"
+Source = "https://github.com/finlay-hudson/Real-VAS"
+
+[project.scripts]
+real-vas-demo = "real_vas.demo:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"real_vas" = ["**/*.json"]

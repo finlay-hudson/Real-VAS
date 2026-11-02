@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual envs
+.venv
+.venv/
+venv/
+env/
+real-vas_venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local pipeline outputs
+out/
+*.pt
+*.safetensors
+
+# Papers / supplementary
+*.pdf
+supplementary_material.zip
+
+# Model checkpoints that should live elsewhere
+checkpoints/
+pretrained_models/
+
+# Jupyter
+.ipynb_checkpoints/
