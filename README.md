@@ -102,14 +102,12 @@ bash scripts/run_demo.sh
 See `examples/README.md` for what the shipped clips and masks are and
 how they were captured.
 
-![Demo showcase](docs/demo_showcase.png)
+![Demo showcase](docs/demo_showcase.gif)
 
-*Illustrative output shape from a different Real-VAS clip
-(`outside_table_stationary_1` — wooden panel occluding a walking person).
-Row 1 — fg source. Row 2 — bg source. Row 3 — composite. Row 4 — composite
-with amodal GT overlay (green = where the person is, even when hidden by
-the panel). The shipped box/puck example produces an output of the same
-shape, written to `out/demo/comparison.mp4`.*
+*The shipped `out/demo/comparison.mp4` — four panels from left-to-right,
+top-to-bottom: BG source clip (puck + hand), FG source clip (static box),
+composite (box occludes puck + hand), composite + amodal GT overlay
+(green = where the puck+hand actually is, including behind the box).*
 
 Outputs land in `out/demo/`:
 
@@ -153,6 +151,16 @@ the FG mask with the FG object's shadows/reflections (see
 `--camera-motion pan_right` for virtual camera motion. Presets: `pan_left`,
 `pan_right`, `pan_on_zoomed_canvas`, `dutch_angle_pan`, `zoom_in_tilt_down`,
 `slow_zoom_and_pan_left`, `slow_zoom_and_pan_right`.
+
+![Gen-Omnimatte showcase](docs/demo_showcase_genomni.gif)
+
+*Same four-panel grid as above, with `--gen-omnimatte-model-root/...-transformer`
+supplied. Gen-Omnimatte solves for the FG layer's alpha matte on the raw
+FG clip, which pulls the box's **cast shadow** on the table into the FG
+mask. In the composite (bottom-left panel) the box now casts its shadow
+onto the puck+hand scene instead of appearing to float. Dials:
+`--gen-omni-alpha-floor`, `--gen-omni-alpha-gamma`,
+`--gen-omni-alpha-feather` — see `--help`.*
 
 ---
 
