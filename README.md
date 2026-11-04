@@ -36,8 +36,17 @@ pip install git+https://github.com/facebookresearch/sam2.git@2b90b9f
 pip install git+https://github.com/luca-medeiros/lang-segment-anything.git --no-deps
 ```
 
-Then download a SAM2 checkpoint (e.g. `sam2_hiera_large.pt`) from the SAM2
-repository and keep its path handy — the demo takes it as `--sam-ckpt`.
+Then download the SAM2-large checkpoint (~900 MB) and keep its path
+handy — the demo takes it as `--sam-ckpt`:
+
+```bash
+wget https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt
+```
+
+(This is the original SAM 2 checkpoint, matching the `sam2_hiera_l.yaml`
+config the demo loads by default. Other sizes — tiny / small / base_plus
+— live under the same `.../072824/` directory if you want a smaller
+model.)
 
 ### Optional: Gen-Omnimatte support
 
