@@ -127,7 +127,7 @@ def main() -> None:
         "occlusion": DatasetSplit.OCCLUSION,
         "both": DatasetSplit.BOTH,
     }
-    cfg = DataConfigREALVAS(data_root=args.dataset)
+    cfg = DataConfigREALVAS(data_root=args.dataset, frame_dir_name=None)
     ds = REALVASDataset(cfg, dataset_split=split_map[args.split])
     print(f"Loaded Real-VAS ({args.split}) — {len(ds)} videos")
 

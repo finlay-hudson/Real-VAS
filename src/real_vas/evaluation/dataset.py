@@ -14,10 +14,10 @@ from torchvision import transforms
 @dataclass
 class DataConfigREALVAS:
     data_root: Path = Path("data/Real-VAS")
-    frame_dir_name: str = "frames"
+    frame_dir_name: Optional[str] = "frames"
     amodal_mask_dir_name: str = "amodal_masks"
     modal_mask_dir_name: str = "modal_masks"
-    anno_file_name: str = "annos"
+    anno_file_name: Optional[str] = "annos"
 
 
 class DatasetSplit(Enum):
@@ -55,14 +55,17 @@ class REALVASDataset(Dataset):
         if self.anno_file_name:
             with open(vid_dir / (self.anno_file_name + ".json")) as f:
                 anno = json.load(f)
-        frames = self._get_ims(vid_dir / self.frame_dir_name, suffix=".jpg")
+        frames = None
+        if self.frame_dir_name:
+            frames = self._get_ims(vid_dir / self.frame_dir_name, suffix=".jpg")
 
         amodal_masks = None
         if self.amodal_mask_dir_name:
             amodal_masks = self._get_ims(vid_dir / self.amodal_mask_dir_name, suffix=".png")
         modal_masks = self._get_ims(vid_dir / self.modal_mask_dir_name, suffix=".png")
 
-        return frames, amodal_masks[0], amodal_masks, modal_masks, anno, str(vid_name)
+        first_amodal = amodal_masks[0] if amodal_masks is not None else None
+        return frames, first_amodal, amodal_masks, modal_masks, anno, str(vid_name)
 
     def __len__(self):
         return len(self.vid_dirs)

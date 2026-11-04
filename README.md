@@ -156,25 +156,99 @@ python -m real_vas.evaluation.evaluate \
     --output results.json
 ```
 
-The `predictions/` tree must mirror the dataset layout — one subdir per
-video, PNG masks per frame:
+Equivalent console entry point if you installed the package:
+`real-vas-evaluate --dataset ... --predictions ... --split ...`
+
+### Expected inputs
+
+**`--dataset`** points at the Real-VAS root, exactly as it comes off the
+Hub snapshot:
+
+```
+Real-VAS/
+├── containment/<vid_name>/
+│   ├── amodal_masks/00000.png ...   # GT amodal masks (what the eval scores against)
+│   ├── modal_masks/00000.png  ...   # GT visible masks (used for hidden-region IoU)
+│   ├── annos.json                   # per-frame occlusion info (level + amount)
+│   ├── frames/00000.jpg ...         # source frames (optional; eval doesn't read them)
+│   └── form.json, debug_vis/        # metadata (eval ignores)
+└── occlusion/<vid_name>/
+    └── (same layout)
+```
+
+The evaluator only reads `amodal_masks/`, `modal_masks/`, and `annos.json`,
+so missing `frames/` is fine. `<vid_name>` is any string the dataset uses
+— your predictions must match it exactly.
+
+**`--predictions`** points at a tree that mirrors the dataset-split layout.
+One directory per video, PNG per frame, filenames matching the GT masks:
 
 ```
 predictions/
-├── containment/<vid_name>/pred_masks/00000.png ...
-└── occlusion/<vid_name>/pred_masks/00000.png ...
+├── containment/<vid_name>/
+│   └── pred_masks/
+│       ├── 00000.png   # (H, W) grayscale, any value > 0 = foreground; or strictly 0/255
+│       ├── 00001.png
+│       └── ...         # one per GT frame, exact same shape as amodal_masks
+└── occlusion/<vid_name>/
+    └── pred_masks/
+        └── ...
 ```
 
-For multi-generation predictions, put each generation under `gen_0/`,
-`gen_1/`, ... instead of `pred_masks/`. Masks can be grayscale PNG with any
-value > 0 taken as foreground (or strictly 0/255).
+Rules the evaluator enforces:
 
-Metrics per generation: `mIOU` (all frames), `mIOUfo` (any occlusion),
-`mIOUffo` (fully occluded), `mIOUocc` (hidden-region IoU on
-partially-occluded frames).
+- **Shape must match GT** — prediction `(T, H, W)` equals the dataset's
+  `amodal_masks` shape. Resize before saving, or the eval errors out
+  pointing at the mismatched video.
+- **Frame count must match** — one PNG per GT frame, named so they sort
+  the same way as the GT (zero-padded `00000.png`, `00001.png`, … works).
+- **Grayscale PNG** — any pixel value `> 0` is foreground; strictly 0/255
+  masks also work. The evaluator binarizes at 0.5.
+- **Any directory name under `<vid_name>/`** — `pred_masks/`,
+  `amodal_masks/`, or `predictions/` are all detected. Or put PNGs
+  directly under `<vid_name>/` with no subdir.
 
-The underlying library is also available directly for custom harnesses:
-`real_vas.evaluation.eval_runner.get_iou_results(preds, amodal_gt, modal_gt, occl_info)`.
+**Multi-generation predictions** (stochastic or ensemble models): put each
+generation in its own `gen_N/` directory next to (instead of) `pred_masks/`:
+
+```
+predictions/occlusion/<vid_name>/
+├── gen_0/00000.png ...
+├── gen_1/00000.png ...
+└── gen_2/00000.png ...
+```
+
+The report then gives per-generation metrics (`gen: 0`, `gen: 1`, …).
+
+**Videos with no prediction** are skipped with a warning and listed at the
+end of the run; they don't fail the aggregate.
+
+### Metrics
+
+Each row/aggregate is per generation:
+
+| Key       | Measured over                                         |
+|-----------|-------------------------------------------------------|
+| `mIOU`    | all frames (standard mask IoU vs. amodal GT)         |
+| `mIOUfo`  | frames with any occlusion (`amount > 0`)             |
+| `mIOUffo` | frames where the object is fully occluded            |
+| `mIOUocc` | hidden-region IoU on partially-occluded frames: IoU of (pred ∧ ¬modal) vs. (amodal ∧ ¬modal) |
+
+Empty buckets (e.g. no fully-occluded frames in the video) contribute no
+score to the aggregate — they don't drag `mIOUffo` to zero.
+
+### Programmatic use
+
+The underlying library is callable directly for custom harnesses:
+
+```python
+from real_vas.evaluation.eval_runner import get_iou_results
+results = get_iou_results(preds, amodal_gt, modal_gt, occl_info)
+#  preds:      (G, T, H, W) uint8, 0 or 255 — G generations per video
+#  amodal_gt:  (T, H, W) uint8 0/255
+#  modal_gt:   (T, H, W) uint8 0/255
+#  occl_info:  list[OcclusionInfo], one per frame (level, amount)
+```
 
 ---
 
