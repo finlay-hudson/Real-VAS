@@ -13,7 +13,8 @@ Two-clip (fg from clip A overlaid onto bg clip B) — minimal, no extra deps:
         --longest-edge 480 --no-align \\
         --out out/smoke
 
-Two-clip with Generative Omnimatte (clean shadows / reflections on the bg plate):
+Two-clip with Generative Omnimatte (extend the fg mask with the fg object's
+shadows / reflections so the composite carries them over naturally):
 
     python -m real_vas.demo \\
         --fg examples/fg_box.mp4  --fg-prompt "cardboard box" \\
@@ -23,8 +24,8 @@ Two-clip with Generative Omnimatte (clean shadows / reflections on the bg plate)
         --gen-omnimatte-transformer /path/to/cogvideox-v1.5-5b-transformer.safetensors \\
         --out out/smoke_omni
 
-Single-video, user-named (both objects segmented in the same clip, fg erased
-with Gen-Omnimatte before re-compositing — matches the paper's single-video flow):
+Single-video (both objects live in the same clip; Gen-Omnimatte optional, and
+when on just extends the fg mask with its shadows the same way):
 
     python -m real_vas.demo \\
         --video clips/scene.mp4 \\
@@ -63,7 +64,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-from natsort import natsorted
 from PIL import Image
 
 
@@ -257,48 +257,92 @@ def _write_comparison_mp4(path: Path, bg_frames: np.ndarray, fg_frames: np.ndarr
     _write_mp4(path, grid, fps)
 
 
-def _run_gen_omnimatte_cleanup(frames: np.ndarray, fg_masks: np.ndarray,
-                               save_path: Path, model_name: Path,
-                               transformer_path: Path) -> np.ndarray:
-    """Erase the fg object from `frames` with GenOmnimatte; return (T, H, W, 3) uint8.
+def _run_gen_omnimatte_refine_fg(fg_frames: np.ndarray, fg_masks: np.ndarray,
+                                 bg_masks: np.ndarray, save_path: Path,
+                                 model_name: Path, transformer_path: Path,
+                                 alpha_floor: float = 0.0,
+                                 alpha_gamma: float = 0.3,
+                                 alpha_feather: float = 3.0) -> np.ndarray:
+    """Use GenOmnimatte to extend `fg_masks` to include the fg object's shadows
+    and reflections.
+
+    Matches the dataset pipeline (`9_create_final_dataset.py:213-248`):
+    run on the raw fg clip + original fg mask, read the extended fg alpha from
+    `optim_outs.pth`, strip any pixels that overlap the bg (occludee) mask so
+    shadows that cross the occludee don't eat into it, and union back onto the
+    original fg mask. Returns (T, H, W) uint8 soft alpha — the compositer's
+    `blend_multiple_foregrounds` treats it as [0, 1] float, so soft shadow
+    pixels carry over into the final composite without being thresholded away.
+
+    Dials:
+      alpha_floor: pixels in gen-omnimatte's alpha below this value are zeroed
+                   (default 0.05 kills speckle but keeps most of the shadow).
+      alpha_gamma: `alpha ** gamma`; <1 brightens faint shadow, >1 suppresses.
 
     Lazy-imports `real_vas.utils.gen_omnimatte_tools` — users must install it
     separately (see the README). Raises a clear error if unavailable.
     """
-    try:
-        from real_vas.utils.gen_omnimatte_tools.configs import get_config
-        from real_vas.utils.gen_omnimatte_tools.runner import (
-            get_components,
-            run_through_gen_omnimatte,
+    optim_path = save_path / "optim_outs.pth"
+    if optim_path.exists():
+        print(f"[gen-omni] reusing cached {optim_path}")
+    else:
+        try:
+            from real_vas.utils.gen_omnimatte_tools.configs import get_config
+            from real_vas.utils.gen_omnimatte_tools.runner import (
+                get_components,
+                run_through_gen_omnimatte,
+            )
+        except ImportError as e:
+            raise SystemExit(
+                "Gen-Omnimatte support requires `real_vas.utils.gen_omnimatte_tools`, "
+                "which is not shipped with this repo. See the README section "
+                "'Gen-Omnimatte setup' for install instructions.\n"
+                f"Original error: {e}"
+            ) from e
+
+        config = get_config()
+        pipeline, vae, generator = get_components(config, str(model_name), str(transformer_path))
+
+        front_masks = fg_masks[None]
+        run_through_gen_omnimatte(
+            config, pipeline, vae, generator, fg_frames, front_masks,
+            prompt="a video of a scene", save_path=save_path,
+            keep_fg_ids=[-1], save_first_stage=True,
         )
-    except ImportError as e:
-        raise SystemExit(
-            "Gen-Omnimatte support requires `real_vas.utils.gen_omnimatte_tools`, "
-            "which is not shipped with this repo. See the README section "
-            "'Gen-Omnimatte setup' for install instructions.\n"
-            f"Original error: {e}"
-        ) from e
 
-    config = get_config()
-    pipeline, vae, generator = get_components(config, str(model_name), str(transformer_path))
+        if not optim_path.exists():
+            raise RuntimeError(f"GenOmnimatte did not write {optim_path}")
+    x_alpha = torch.load(optim_path, weights_only=False)
+    if isinstance(x_alpha, dict):
+        x_alpha = x_alpha["masks"][:, None].float()
 
-    front_masks = fg_masks[None]
-    run_through_gen_omnimatte(
-        config, pipeline, vae, generator, frames, front_masks,
-        prompt="a video of a scene", save_path=save_path,
-        keep_fg_ids=[-1], save_first_stage=True,
-    )
+    h, w = fg_frames.shape[1:3]
+    x_alpha = torch.nn.functional.interpolate(x_alpha.float(), size=(h, w),
+                                              mode="bicubic", align_corners=False)
+    gen_alpha = x_alpha.squeeze(1).clamp(0, 1).cpu().numpy()  # (T, H, W) in [0, 1]
+    gen_alpha = gen_alpha[: len(fg_frames)]
 
-    first_stage_dir = save_path / "first_stage_-1"
-    png_files = natsorted(first_stage_dir.glob("*.png"))
-    if not png_files:
-        raise RuntimeError(f"GenOmnimatte produced no frames in {first_stage_dir}")
-    clean = np.stack([np.array(Image.open(p).convert("RGB")) for p in png_files])
+    if alpha_floor > 0:
+        gen_alpha[gen_alpha < alpha_floor] = 0.0
+    if alpha_gamma != 1.0:
+        gen_alpha = np.power(gen_alpha, alpha_gamma)
+    if alpha_feather > 0:
+        # Feather the extended-shadow alpha only (box interior gets re-filled by
+        # the hard orig_alpha union below, so the box edge stays crisp). Blur
+        # per-frame; sigma is in output-resolution pixels.
+        ksize = int(max(3, round(alpha_feather * 6)) | 1)  # odd, >=3
+        gen_alpha = np.stack([
+            cv2.GaussianBlur(f, (ksize, ksize), alpha_feather) for f in gen_alpha
+        ])
 
-    orig_h, orig_w = frames.shape[1:3]
-    if clean.shape[1:3] != (orig_h, orig_w):
-        clean = np.stack([cv2.resize(f, (orig_w, orig_h)) for f in clean])
-    return clean[: len(frames)]
+    bg_bin = (bg_masks[: len(gen_alpha)] > 127)
+    gen_alpha[bg_bin] = 0
+
+    orig_alpha = (fg_masks[: len(gen_alpha)].astype(np.float32) / 255.0)
+    merged = np.clip(gen_alpha + orig_alpha, 0.0, 1.0)
+    print(f"[gen-omni] alpha stats: min={merged.min():.3f} max={merged.max():.3f} "
+          f"mean={merged.mean():.3f} nonzero_frac={(merged > 0).mean():.3f}")
+    return (merged * 255).astype(np.uint8)
 
 
 def _run_two_clip(args, device, sam_image_pred, sam_vid):
@@ -329,12 +373,15 @@ def _run_two_clip(args, device, sam_image_pred, sam_vid):
         fg_frames, fg_masks = _align_fg_to_bg_centroids(fg_frames, fg_masks, bg_masks)
 
     if args.gen_omnimatte_model_root is not None and args.gen_omnimatte_transformer is not None:
-        print("[clean] GenOmnimatte: erasing fg from bg plate before compositing")
+        print("[gen-omni] extending fg mask with shadows/reflections from the fg clip")
         gen_dir = args.out / "gen_omnimatte"
         gen_dir.mkdir(parents=True, exist_ok=True)
-        bg_frames = _run_gen_omnimatte_cleanup(
-            bg_frames, bg_masks, gen_dir,
+        fg_masks = _run_gen_omnimatte_refine_fg(
+            fg_frames, fg_masks, bg_masks, gen_dir,
             args.gen_omnimatte_model_root, args.gen_omnimatte_transformer,
+            alpha_floor=args.gen_omni_alpha_floor,
+            alpha_gamma=args.gen_omni_alpha_gamma,
+            alpha_feather=args.gen_omni_alpha_feather,
         )
 
     out_fps = args.fps if args.fps is not None else fg_fps
@@ -342,30 +389,39 @@ def _run_two_clip(args, device, sam_image_pred, sam_vid):
 
 
 def _run_single_video(args, device, sam_image_pred, sam_vid):
-    if args.gen_omnimatte_model_root is None or args.gen_omnimatte_transformer is None:
-        raise SystemExit(
-            "--gen-omnimatte-model-root and --gen-omnimatte-transformer are required "
-            "in single-video mode (the fg must be erased before re-compositing)."
-        )
-
     print(f"[load] clip (longest_edge={args.longest_edge})")
     full_frames, fps = _load_clip(args.video, args.longest_edge)
     print(f"       clip: {full_frames.shape} @ {fps:.2f} fps")
 
-    print(f"[seg] user-named fg={args.fg_prompt!r} bg={args.bg_prompt!r}")
-    fg_masks = _segment_clip(sam_image_pred, sam_vid, full_frames, args.fg_prompt, device)
-    bg_masks = _segment_clip(sam_image_pred, sam_vid, full_frames, args.bg_prompt, device)
+    if args.fg_mask_png is not None:
+        print(f"[seg] fg: supplied mask {args.fg_mask_png}")
+        first_fg = _load_first_frame_mask(args.fg_mask_png, full_frames)
+        fg_masks = _segment_clip_from_mask(sam_vid, full_frames, first_fg, device)
+    else:
+        print(f"[seg] fg: prompt {args.fg_prompt!r}")
+        fg_masks = _segment_clip(sam_image_pred, sam_vid, full_frames, args.fg_prompt, device)
+    if args.bg_mask_png is not None:
+        print(f"[seg] bg: supplied mask {args.bg_mask_png}")
+        first_bg = _load_first_frame_mask(args.bg_mask_png, full_frames)
+        bg_masks = _segment_clip_from_mask(sam_vid, full_frames, first_bg, device)
+    else:
+        print(f"[seg] bg: prompt {args.bg_prompt!r}")
+        bg_masks = _segment_clip(sam_image_pred, sam_vid, full_frames, args.bg_prompt, device)
 
-    print("[clean] GenOmnimatte: erasing fg from clip to make a clean bg plate")
-    gen_dir = args.out / "gen_omnimatte"
-    gen_dir.mkdir(parents=True, exist_ok=True)
-    clean_bg = _run_gen_omnimatte_cleanup(
-        full_frames, fg_masks, gen_dir,
-        args.gen_omnimatte_model_root, args.gen_omnimatte_transformer,
-    )
+    if args.gen_omnimatte_model_root is not None and args.gen_omnimatte_transformer is not None:
+        print("[gen-omni] extending fg mask with shadows/reflections from the clip")
+        gen_dir = args.out / "gen_omnimatte"
+        gen_dir.mkdir(parents=True, exist_ok=True)
+        fg_masks = _run_gen_omnimatte_refine_fg(
+            full_frames, fg_masks, bg_masks, gen_dir,
+            args.gen_omnimatte_model_root, args.gen_omnimatte_transformer,
+            alpha_floor=args.gen_omni_alpha_floor,
+            alpha_gamma=args.gen_omni_alpha_gamma,
+            alpha_feather=args.gen_omni_alpha_feather,
+        )
 
     out_fps = args.fps if args.fps is not None else fps
-    return full_frames, fg_masks, clean_bg, bg_masks, out_fps
+    return full_frames, fg_masks, full_frames, bg_masks, out_fps
 
 
 def _apply_camera_motion(fg_frames, fg_masks, bg_frames, bg_masks, preset_name):
@@ -399,7 +455,8 @@ def main() -> None:
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--video", type=Path,
                       help="Single-video mode: fg and bg objects both come from this clip. "
-                           "Requires --fg-prompt, --bg-prompt, and the --gen-omnimatte-* paths.")
+                           "Requires --fg-prompt/--fg-mask-png and --bg-prompt/--bg-mask-png. "
+                           "--gen-omnimatte-* is optional (extends the fg mask with shadows).")
     mode.add_argument("--fg", type=Path,
                       help="Two-clip mode: foreground clip (the occluder).")
     p.add_argument("--bg", type=Path,
@@ -427,10 +484,22 @@ def main() -> None:
     p.add_argument("--no-align", action="store_true",
                    help="Two-clip mode: skip centroid-aligning the fg object onto the bg object.")
     p.add_argument("--gen-omnimatte-model-root", type=Path, default=None,
-                   help="HF snapshot dir for CogVideoX-Fun-V1.5-5b-InP. "
-                        "Required for --video mode; optional for --fg/--bg to clean the bg plate.")
+                   help="HF snapshot dir for CogVideoX-Fun-V1.5-5b-InP. Optional; "
+                        "when supplied, extends the fg mask with shadows/reflections "
+                        "before compositing. Also needs --gen-omnimatte-transformer.")
     p.add_argument("--gen-omnimatte-transformer", type=Path, default=None,
                    help="cogvideox-v1.5-5b-transformer.safetensors path.")
+    p.add_argument("--gen-omni-alpha-floor", type=float, default=0.0,
+                   help="Pixels in GenOmnimatte's fg alpha below this value are zeroed. "
+                        "Higher → less shadow, less speckle (default 0.0).")
+    p.add_argument("--gen-omni-alpha-gamma", type=float, default=0.3,
+                   help="Gamma on GenOmnimatte's fg alpha (alpha ** gamma). "
+                        "<1 brightens faint shadow, >1 suppresses it (default 0.3).")
+    p.add_argument("--gen-omni-alpha-feather", type=float, default=3.0,
+                   help="Gaussian blur sigma (output-resolution pixels) on the "
+                        "extended-shadow alpha, applied before unioning with the "
+                        "crisp original fg mask. Smooths pixelly edges from the "
+                        "gen-omnimatte upsample; 0 disables (default 3.0).")
     p.add_argument("--camera-motion", default=None,
                    help="Apply a camera-motion preset to the composite. See module docstring for list.")
     args = p.parse_args()
@@ -442,6 +511,11 @@ def main() -> None:
             p.error("two-clip mode: supply either --fg-prompt or --fg-mask-png")
         if args.bg_prompt is None and args.bg_mask_png is None:
             p.error("two-clip mode: supply either --bg-prompt or --bg-mask-png")
+    if args.video is not None:
+        if args.fg_prompt is None and args.fg_mask_png is None:
+            p.error("single-video mode: supply either --fg-prompt or --fg-mask-png for the occluder")
+        if args.bg_prompt is None and args.bg_mask_png is None:
+            p.error("single-video mode: supply either --bg-prompt or --bg-mask-png for the amodal target")
 
     args.out.mkdir(parents=True, exist_ok=True)
     device = torch.device(args.device)

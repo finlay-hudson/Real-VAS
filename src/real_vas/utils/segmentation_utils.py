@@ -122,13 +122,19 @@ class LangSamRunner:
         with torch.no_grad():
             outputs = self.gdino.model(**inputs)
 
-        gdino_results = self.gdino.processor.post_process_grounded_object_detection(
-            outputs,
-            inputs.input_ids,
-            threshold=self.box_threshold,
-            text_threshold=self.text_threshold,
-            target_sizes=torch.stack([torch.tensor([images.shape[1], images.shape[2]])] * images.shape[0]),
-        )
+        # transformers renamed `box_threshold` -> `threshold` at 5.x; detect which one we have.
+        try:
+            gdino_results = self.gdino.processor.post_process_grounded_object_detection(
+                outputs, inputs.input_ids,
+                threshold=self.box_threshold, text_threshold=self.text_threshold,
+                target_sizes=torch.stack([torch.tensor([images.shape[1], images.shape[2]])] * images.shape[0]),
+            )
+        except TypeError:
+            gdino_results = self.gdino.processor.post_process_grounded_object_detection(
+                outputs, inputs.input_ids,
+                box_threshold=self.box_threshold, text_threshold=self.text_threshold,
+                target_sizes=torch.stack([torch.tensor([images.shape[1], images.shape[2]])] * images.shape[0]),
+            )
 
         return gdino_results
 

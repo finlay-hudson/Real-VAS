@@ -41,10 +41,12 @@ repository and keep its path handy — the demo takes it as `--sam-ckpt`.
 
 ### Optional: Gen-Omnimatte support
 
-Modes that erase the FG object from the BG plate before compositing need the
-`gen_omnimatte_tools` package (which vendors `omnimatte` and `videox_fun`).
-It is **not shipped** with this repo because of its size and third-party
-license surface. To enable Gen-Omnimatte modes:
+Gen-Omnimatte extends the FG mask with the FG object's shadows and reflections
+(by solving for the FG layer's alpha matte over the raw FG clip), so those
+cues carry over naturally when the FG is composited onto the BG plate. It
+needs the `gen_omnimatte_tools` package (which vendors `omnimatte` and
+`videox_fun`) and is **not shipped** with this repo because of its size and
+third-party license surface. To enable it:
 
 1. Clone the upstream (or your own fork) of `gen_omnimatte_tools` into a
    directory of your choice.
@@ -131,10 +133,11 @@ python -m real_vas.demo \
     --out out/mine
 ```
 
-### Optional: clean shadows with Gen-Omnimatte, or add camera motion
+### Optional: carry over shadows with Gen-Omnimatte, or add camera motion
 
-Add `--gen-omnimatte-model-root` + `--gen-omnimatte-transformer` for a clean
-BG plate (see [Gen-Omnimatte setup](#optional-gen-omnimatte-support)), or
+Add `--gen-omnimatte-model-root` + `--gen-omnimatte-transformer` to extend
+the FG mask with the FG object's shadows/reflections (see
+[Gen-Omnimatte setup](#optional-gen-omnimatte-support)), or
 `--camera-motion pan_right` for virtual camera motion. Presets: `pan_left`,
 `pan_right`, `pan_on_zoomed_canvas`, `dutch_angle_pan`, `zoom_in_tilt_down`,
 `slow_zoom_and_pan_left`, `slow_zoom_and_pan_right`.
