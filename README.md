@@ -56,6 +56,12 @@ third-party license surface. To enable it:
    weights, and pass their paths via `--gen-omnimatte-model-root` and
    `--gen-omnimatte-transformer`.
 
+**Hardware:** CogVideoX-Fun is a 5.6 B parameter video diffusion model.
+Measured peak ~42 GB VRAM on an A40 (longest edge 512, 27 frames) with
+VAE slicing/tiling enabled. A GPU with **≥ 24 GB** is recommended; the
+first-stage diffusion takes ~6 min on an A40. The headline two-clip demo
+below needs **none** of this — it runs in ~10 s on any 8 GB GPU.
+
 Without these, the two-clip minimal demo (below) still works end-to-end.
 
 ---
@@ -79,25 +85,31 @@ dataset card for the per-clip layout.
 
 ## Quick demo
 
-The shipped example (`outside_table_stationary_1` from Real-VAS) is a
-**wooden panel** standing in a car park (fg occluder) composited over
-another shot of the same scene where a **person walks past** (bg
-occludee). The panel is static; the person walks right-to-left behind it.
-Produces modal + amodal ground-truth masks for the walking person. Takes
-~10 s on a single GPU, no LangSAM required (the shipped masks are the
-exact per-object masks the dataset used to generate this clip).
+The shipped example is the air-hockey TTE pair from Real-VAS: a **cardboard
+box** standing on the table (fg occluder, `examples/fg_box.mp4`) composited
+over another shot of the same table where a **hand slides a puck across**
+(bg occludee, `examples/bg_puck.mp4`). The box is static; the puck + hand
+pass right-to-left behind it. Produces modal + amodal ground-truth masks
+for the puck+hand. Takes ~10 s on any 8 GB+ GPU, no LangSAM or
+Gen-Omnimatte required (the shipped PNGs are the exact per-object masks
+the dataset uses).
 
 ```bash
 export SAM_CKPT=/path/to/sam2_hiera_large.pt
 bash scripts/run_demo.sh
 ```
 
+See `examples/README.md` for what the shipped clips and masks are and
+how they were captured.
+
 ![Demo showcase](docs/demo_showcase.png)
 
-*Row 1 — fg source clip (static wooden panel). Row 2 — bg source clip
-(person walking right-to-left). Row 3 — composite (person walks behind the
-panel). Row 4 — amodal GT overlay (green = where the person actually is,
-even when hidden by the panel).*
+*Illustrative output shape from a different Real-VAS clip
+(`outside_table_stationary_1` — wooden panel occluding a walking person).
+Row 1 — fg source. Row 2 — bg source. Row 3 — composite. Row 4 — composite
+with amodal GT overlay (green = where the person is, even when hidden by
+the panel). The shipped box/puck example produces an output of the same
+shape, written to `out/demo/comparison.mp4`.*
 
 Outputs land in `out/demo/`:
 

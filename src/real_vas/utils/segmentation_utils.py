@@ -8,9 +8,10 @@ import numpy as np
 from PIL import Image
 import torch
 
-from lang_sam.models.gdino import GDINO
-from sam2.build_sam import build_sam2, build_sam2_video_predictor
-from sam2.sam2_image_predictor import SAM2ImagePredictor
+# sam2 and lang_sam are imported lazily so `demo.py --help` and the
+# evaluator can run without them installed. sam2 is actually required to
+# run the demo; lang_sam is only needed for the --fg-prompt / --bg-prompt
+# path (users supplying first-frame mask PNGs can skip it).
 
 from real_vas.utils.frame_utils import preprocess_frames
 # from real_vas.utils.sam3_utils import Sam3VideoPredictor
@@ -88,6 +89,15 @@ def init_state(
 
 def get_sam2_predictor(single_image=False, model_cfg="sam2_hiera_l.yaml", checkpoint="sam2_hiera_large.pt",
                        device="cuda"):
+    try:
+        from sam2.build_sam import build_sam2, build_sam2_video_predictor
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+    except ImportError as e:
+        raise SystemExit(
+            "SAM2 is required. Install it with:\n"
+            "  pip install git+https://github.com/facebookresearch/sam2.git@2b90b9f\n"
+            f"Original error: {e}"
+        ) from e
     if single_image:
         return SAM2ImagePredictor(build_sam2(model_cfg, checkpoint, device))
 
@@ -99,7 +109,16 @@ def get_sam2_predictor(single_image=False, model_cfg="sam2_hiera_l.yaml", checkp
 
 
 class LangSamRunner:
-    def __init__(self, image_sam: SAM2ImagePredictor):
+    def __init__(self, image_sam):
+        try:
+            from lang_sam.models.gdino import GDINO
+        except ImportError as e:
+            raise SystemExit(
+                "LangSAM is required for --fg-prompt / --bg-prompt. Install it with:\n"
+                "  pip install git+https://github.com/luca-medeiros/lang-segment-anything.git --no-deps\n"
+                "Or supply first-frame masks with --fg-mask-png / --bg-mask-png and skip LangSAM.\n"
+                f"Original error: {e}"
+            ) from e
         self.gdino = GDINO()
         self.gdino.build_model()
         self.gdino.model = self.gdino.model.to(image_sam.device)

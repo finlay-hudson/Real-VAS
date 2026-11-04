@@ -2,12 +2,14 @@
 # Real-VAS two-clip demo.
 # Produces $OUT_DIR/{frames,gt_masks,visible_masks,debugs,composite.mp4}.
 #
-# Default example is the "outside_table_stationary_1" TTE pair from the
-# Real-VAS dataset: a wooden panel standing in a car park (fg occluder)
-# composited over another shot of the same scene where a person walks
-# past (bg occludee). Both clips come from the same static camera, so
-# centroid alignment is disabled with --no-align. The shipped masks are
-# the exact per-object masks the dataset used to generate this clip.
+# Default example is the air-hockey TTE pair from the Real-VAS dataset:
+# a cardboard box standing on the table (fg occluder, examples/fg_box.mp4)
+# composited over another shot of the same table where a hand slides a
+# puck across (bg occludee, examples/bg_puck.mp4). Both clips come from
+# the same static camera, so centroid alignment is disabled with
+# --no-align. The shipped PNGs under examples/masks/ are the exact
+# first-frame per-object masks — SAM2 propagates them through the clip.
+# See examples/README.md for details.
 #
 # Required:
 #   SAM_CKPT   path to a SAM2 checkpoint, e.g. sam2_hiera_large.pt
