@@ -263,8 +263,25 @@ Each row/aggregate is per generation:
 | `mIOUffo` | frames where the object is fully occluded            |
 | `mIOUocc` | hidden-region IoU on partially-occluded frames: IoU of (pred ∧ ¬modal) vs. (amodal ∧ ¬modal) |
 
-Empty buckets (e.g. no fully-occluded frames in the video) contribute no
-score to the aggregate — they don't drag `mIOUffo` to zero.
+Empty buckets contribute no score to the aggregate: a video with no
+fully-occluded frames returns NaN for `mIOUffo`, a video with no
+partially-occluded frames returns NaN for `mIOUocc`. The CLI aggregates
+with a `np.nanmean`-style rule — videos with NaN for a given metric are
+dropped from both the numerator and the denominator for that metric
+only. Counting them as zero would drag `mIOUffo` down roughly 3× against
+most benchmarks; our CLI does not do that.
+
+### End-to-end validation
+
+Reproduced on the paper's Diffusion-VAS baseline predictions
+(both splits, 398/400 videos; 2 skipped for annotation length mismatch):
+
+| Metric   | Paper  | CLI    | Δ         |
+|----------|--------|--------|-----------|
+| mIOU     | 0.6988 | 0.6983 | −0.0005   |
+| mIOUfo   | 0.6522 | 0.6523 | +0.0001   |
+| mIOUffo  | 0.2017 | 0.2017 | ±0.0000   |
+| mIOUocc  | 0.3907 | 0.3918 | +0.0011   |
 
 ### Programmatic use
 
@@ -277,6 +294,8 @@ results = get_iou_results(preds, amodal_gt, modal_gt, occl_info)
 #  amodal_gt:  (T, H, W) uint8 0/255
 #  modal_gt:   (T, H, W) uint8 0/255
 #  occl_info:  list[OcclusionInfo], one per frame (level, amount)
+# Returns per-generation dict of {mIOU, mIOUffo, mIOUfo, mIOUocc};
+# empty buckets return NaN — aggregate across videos with np.nanmean.
 ```
 
 ---

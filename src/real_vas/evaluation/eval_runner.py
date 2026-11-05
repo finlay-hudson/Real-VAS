@@ -10,6 +10,11 @@ def get_iou_results(exp_pred_masks: torch.Tensor, gt_amodal_masks: torch.Tensor,
                     gt_occlusion_info: List[OcclusionInfo]) -> dict:
     """
     Calculates various IoU metrics between predicted and ground truth masks using PyTorch.
+
+    Returns per-generation dict of {mIOU, mIOUffo, mIOUfo, mIOUocc}. Empty
+    buckets (e.g. a video with no fully-occluded frames) return NaN for that
+    metric — the CLI's aggregator (`_aggregate` in `evaluate.py`) is NaN-safe
+    and matches `np.nanmean` across videos.
     """
     device = exp_pred_masks.device
     num_generations = exp_pred_masks.shape[0]

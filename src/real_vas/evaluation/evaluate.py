@@ -93,16 +93,22 @@ def _find_pred_dir(pred_root: Path, vid_rel: Path) -> Path:
 
 
 def _aggregate(per_video: dict) -> dict:
-    """Mean each metric across videos (per-generation)."""
+    """NaN-safe mean of each metric across videos (per-generation).
+
+    Matches `np.nanmean`: divides by the number of non-NaN values, NOT the
+    total video count. Critical for `mIOUffo` and `mIOUocc`, which are NaN
+    on videos that have no fully-occluded / partially-occluded frames —
+    counting those as zero would artificially drag the aggregate down.
+    """
     out = {}
     all_gens = sorted({k for v in per_video.values() for k in v})
     for gen_key in all_gens:
         rows = [v[gen_key] for v in per_video.values() if gen_key in v]
         metrics = rows[0].keys()
-        out[gen_key] = {
-            m: float(sum(r[m] for r in rows if r[m] == r[m]) / len(rows))  # skip NaN
-            for m in metrics
-        }
+        out[gen_key] = {}
+        for m in metrics:
+            valid = [r[m] for r in rows if r[m] == r[m]]
+            out[gen_key][m] = float(sum(valid) / len(valid)) if valid else float("nan")
     return out
 
 
@@ -133,6 +139,7 @@ def main() -> None:
 
     per_video: dict[str, dict] = {}
     missing: list[str] = []
+    skipped_bad_anno: list[str] = []
     for i in range(len(ds)):
         _, _, amodal_masks, modal_masks, anno, vid_name = ds[i]
         if amodal_masks is None:
@@ -152,7 +159,10 @@ def main() -> None:
 
         occl_info = [OcclusionInfo.from_dict(o) for o in anno.get("occlusion", [])]
         if len(occl_info) != gt_amodal.shape[0]:
-            print(f"  [warn] {vid_name}: {len(occl_info)} occlusion entries vs {gt_amodal.shape[0]} frames")
+            print(f"  [skip] {vid_name}: {len(occl_info)} occlusion entries vs "
+                  f"{gt_amodal.shape[0]} GT frames — annotation length mismatch")
+            skipped_bad_anno.append(vid_name)
+            continue
 
         per_video[vid_name] = get_iou_results(pred, gt_amodal, gt_vis, occl_info)
         print(f"  [{i + 1}/{len(ds)}] {vid_name}: {per_video[vid_name]['gen: 0']['mIOU']:.3f} mIoU")
@@ -163,6 +173,12 @@ def main() -> None:
             print(f"  - {v}")
         if len(missing) > 5:
             print(f"  (+ {len(missing) - 5} more)")
+    if skipped_bad_anno:
+        print(f"\n{len(skipped_bad_anno)} videos skipped (annotation length ≠ frame count):")
+        for v in skipped_bad_anno[:5]:
+            print(f"  - {v}")
+        if len(skipped_bad_anno) > 5:
+            print(f"  (+ {len(skipped_bad_anno) - 5} more)")
 
     agg = _aggregate(per_video)
     print("\n=== Aggregate ===")
@@ -176,6 +192,8 @@ def main() -> None:
             "split": args.split,
             "num_evaluated": len(per_video),
             "num_missing": len(missing),
+            "num_skipped_bad_anno": len(skipped_bad_anno),
+            "skipped_bad_anno": skipped_bad_anno,
             "aggregate": agg,
             "per_video": per_video,
         }, indent=2))
