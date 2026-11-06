@@ -83,6 +83,7 @@ from huggingface_hub import snapshot_download
 local_dir = snapshot_download(
     repo_id="fhudson96/Real-VAS",
     repo_type="dataset",
+    allow_patterns=["occlusion/**", "containment/**"],
 )
 print(local_dir)  # pass as --dataset to the evaluator
 ```
@@ -91,23 +92,24 @@ Or via the `huggingface-cli`:
 
 ```bash
 huggingface-cli download fhudson96/Real-VAS --repo-type dataset \
+    --include "occlusion/**" "containment/**" \
     --local-dir ~/data/Real-VAS
 ```
 
-The dataset is about 3 GB (300 occlusion + 100 containment clips). Root
-tree:
+The dataset is about 3 GB (300 occlusion + 100 containment clips). Per
+video:
 
 ```
-Real-VAS/
-├── containment/<vid_name>/{amodal_masks,modal_masks,frames,annos.json,form.json}
-├── occlusion/<vid_name>/{amodal_masks,modal_masks,frames,annos.json,form.json}
-├── final_checks.json
-└── rgb_flips.json
+<vid_name>/
+├── amodal_masks/00000.png ...   # GT amodal masks (what the evaluator scores against)
+├── modal_masks/00000.png  ...   # GT visible masks (used for hidden-region IoU)
+├── frames/00000.jpg       ...   # source frames (eval doesn't read them)
+├── annos.json                   # per-frame occlusion info
+└── form.json                    # per-video metadata
 ```
 
-To skip the source frames (eval doesn't read them, saves ~2 GB), add
-`allow_patterns=["**/amodal_masks/**", "**/modal_masks/**", "**/*.json"]`
-to the `snapshot_download` call.
+To skip the source frames (eval doesn't read them, saves ~2 GB), tighten
+the patterns to `["**/amodal_masks/**", "**/modal_masks/**", "**/*.json"]`.
 
 ---
 
