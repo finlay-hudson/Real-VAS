@@ -16,7 +16,7 @@ ground truth**. This repo contains:
 |---|---|
 | 🤗 Dataset | [`fhudson96/Real-VAS`](https://huggingface.co/datasets/fhudson96/Real-VAS) |
 | 🌐 Project page | https://finlay-hudson.github.io/real_vas |
-| 📄 Paper | *under review* |
+| 📄 Paper | [arXiv:2611.00430](https://arxiv.org/abs/2611.00430) |
 
 ---
 
@@ -346,11 +346,13 @@ src/real_vas/
 ## Citation
 
 ```bibtex
-@inproceedings{hudson2026realvas,
-  title     = {Real-VAS: A Real-World Video Amodal Segmentation Dataset},
-  author    = {Hudson, Finlay G. C. and Smith, William A. P.},
-  booktitle = {Under review},
-  year      = {2026}
+@article{hudson2026realvas,
+  title         = {{Real-VAS}: A Real-World Video Amodal Segmentation Dataset},
+  author        = {Hudson, Finlay G. C. and Smith, William A. P.},
+  journal       = {arXiv preprint arXiv:2611.00430},
+  year          = {2026},
+  eprint        = {2611.00430},
+  archivePrefix = {arXiv}
 }
 ```
 
